@@ -27,6 +27,11 @@ async fn cyw43_task(runner: cyw43::Runner<'static, Output<'static>, PioSpi<'stat
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
+
+    // Check the usage of the memory for the task 
+
+    // Check the usage of the memory for the task 
+
     let p = embassy_rp::init(Default::default());
     let fw = include_bytes!("../cyw43-firmware/43439A0.bin");
     let clm = include_bytes!("../cyw43-firmware/43439A0_clm.bin");
@@ -63,6 +68,8 @@ async fn main(spawner: Spawner) {
         .await;
 
     let delay = Duration::from_secs(1);
+
+    
     loop {
         info!("led on!");
         control.gpio_set(0, true).await;
@@ -72,4 +79,5 @@ async fn main(spawner: Spawner) {
         control.gpio_set(0, false).await;
         Timer::after(delay).await;
     }
+
 }
