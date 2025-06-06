@@ -110,7 +110,5 @@ async fn main(spawner: Spawner) {
     
     // Main task can now sleep forever or handle other operations
     info!("Main task going to sleep");
-    loop {
-        Timer::after(Duration::from_secs(3600)).await; // Sleep for 1 hour intervals
-    }
+    loop {}
 }
