@@ -1,114 +1,102 @@
-//! This example tests the RP Pico W on-board LED (connected to CYW43 wireless chip).
-//! Note: Only works on Pico W, not base Pico (see blinky.rs for base board).
+//! This example tests the RP Pico W onboard LED via the CYW43 Wi-Fi chip.
+//!
+//! It does not work with the original RP Pico board (non-W version). See `blinky.rs` for that.
 
-#![no_std]       // Disable Rust standard library (bare-metal environment)
-#![no_main]      // Disable standard main interface
+#![no_std] // Don't link the standard library (needed for embedded targets)
+#![no_main] // Disable normal main entry point; we use `#[embassy_executor::main]` instead
 
-// Import necessary libraries and modules
+// Import required crates and modules
 use cyw43_pio::{PioSpi, DEFAULT_CLOCK_DIVIDER};
-use defmt::*;    // Formatted logging
+use defmt::*; // For logging via RTT
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::{DMA_CH0, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_time::{Duration, Timer};
-use static_cell::StaticCell;  // For static memory allocation
-use {defmt_rtt as _, panic_probe as _};  // Logging and panic handlers
+use static_cell::StaticCell;
+use {defmt_rtt as _, panic_probe as _}; // RTT logging and panic handler
 
-// Bind processor interrupts to our handler
+// Bind the interrupt handler to PIO0 IRQ
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
 });
 
-// Task definition for handling CYW43 wireless chip operations
+/// Background task for running the CYW43 Wi-Fi driver.
+/// This must be running at all times for the chip to function.
 #[embassy_executor::task]
 async fn cyw43_task(
     runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>
 ) -> ! {
-    runner.run().await  // Start processing CYW43 events (runs forever)
+    runner.run().await
 }
 
-// New separate task for LED blinking
+/// LED blink task — toggles CYW43 GPIO 0 (onboard LED) on and off with the given delay.
 #[embassy_executor::task]
-async fn blink_task(
-    mut control: cyw43::Control<'static>,  // Exclusive access to LED control
-    interval: Duration                     // Blink interval
-) -> ! {
-    info!("Blink task started");
-    
-    // Main blink loop - runs forever
+async fn led_blink_task(mut control: cyw43::Control<'static>, delay: Duration) {
     loop {
-        info!("LED on!");
-        control.gpio_set(0, true).await;   // Set CYW43 GPIO0 high (LED on)
-        Timer::after(interval).await;      // Wait
-        
-        info!("LED off!");
-        control.gpio_set(0, false).await;  // Set CYW43 GPIO0 low (LED off)
-        Timer::after(interval).await;      // Wait
+        info!("led on!");
+        control.gpio_set(0, true).await; // Turn LED on
+        Timer::after(delay).await;
+
+        info!("led off!");
+        control.gpio_set(0, false).await; // Turn LED off
+        Timer::after(delay).await;
     }
 }
 
-// Main entry point - uses Embassy's async executor
+/// Main async entry point
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    // Initialize RP2040 peripherals
+    // Initialize Embassy peripherals and clocks
     let p = embassy_rp::init(Default::default());
-    
-    // Load CYW43 firmware and regulatory data (CLM) from files
+
+    // Load firmware for CYW43 Wi-Fi chip
     let fw = include_bytes!("../cyw43-firmware/43439A0.bin");
     let clm = include_bytes!("../cyw43-firmware/43439A0_clm.bin");
 
-    /* Alternative development flashing method:
-    let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
-    let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
-    */
+    // Optional: For faster flashing during development, use fixed memory regions instead
+    // let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
+    // let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
 
-    // Configure power control pin (active low)
-    let pwr = Output::new(p.PIN_23, Level::Low);
-    // Configure SPI chip select pin
-    let cs = Output::new(p.PIN_25, Level::High);
-    
-    // Initialize PIO (Programmable I/O) block for SPI
+    // Configure power and chip-select GPIOs for the CYW43 chip
+    let pwr = Output::new(p.PIN_23, Level::Low);    // Power control
+    let cs  = Output::new(p.PIN_25, Level::High);   // SPI chip select (active low)
+
+    // Initialize PIO peripheral with interrupts
     let mut pio = Pio::new(p.PIO0, Irqs);
-    // Create PIO-based SPI interface for CYW43
+
+    // Create a PIO-based SPI instance to talk to the CYW43 chip
     let spi = PioSpi::new(
-        &mut pio.common,      // PIO shared state
-        pio.sm0,              // Use state machine 0
-        DEFAULT_CLOCK_DIVIDER,// Default SPI clock speed
-        pio.irq0,             // Interrupt handler
-        cs,                   // Chip select pin
-        p.PIN_24,             // MOSI pin
-        p.PIN_29,             // MISO pin
-        p.DMA_CH0,            // DMA channel for transfers
+        &mut pio.common,
+        pio.sm0,
+        DEFAULT_CLOCK_DIVIDER,
+        pio.irq0,
+        cs,
+        p.PIN_24,    // SPI SCK
+        p.PIN_29,    // SPI MOSI
+        p.DMA_CH0,   // DMA channel
     );
 
-    // Allocate static memory for CYW43 driver state
+    // Initialize shared state for the CYW43 driver (required for internal coordination)
     static STATE: StaticCell<cyw43::State> = StaticCell::new();
     let state = STATE.init(cyw43::State::new());
-    
-    // Initialize CYW43 driver and split into components
+
+    // Create the CYW43 driver instance
     let (_net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
-    
-    // Spawn the CYW43 handler task on executor
+
+    // Spawn the background task to keep the CYW43 chip running
     unwrap!(spawner.spawn(cyw43_task(runner)));
 
-    // Initialize CYW43 firmware with regulatory data
+    // Initialize the CYW43 chip with the CLM (regulatory) data
     control.init(clm).await;
-    
-    // Configure power saving mode
-    control
-        .set_power_management(cyw43::PowerManagementMode::PowerSave)
-        .await;
 
-    // Create blink interval (500ms)
-    let blink_interval = Duration::from_millis(1000);
-    
-    // Spawn the blink task with exclusive access to control
-    info!("Spawning blink task");
-    unwrap!(spawner.spawn(blink_task(control, blink_interval)));
-    
-    // Main task can now sleep forever or handle other operations
-    info!("Main task going to sleep");
-    loop {}
+    // Enable power-saving mode (optional)
+    control.set_power_management(cyw43::PowerManagementMode::PowerSave).await;
+
+    // Configure delay for blinking LED
+    let delay = Duration::from_millis(500);
+
+    // Spawn the LED blinking task with desired delay
+    unwrap!(spawner.spawn(led_blink_task(control, delay)));
 }
