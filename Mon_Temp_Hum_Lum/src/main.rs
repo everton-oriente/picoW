@@ -1,14 +1,26 @@
-//! This example tests the RP Pico W onboard LED via the CYW43 Wi-Fi chip.
-//!
-//! It does not work with the original RP Pico board (non-W version). See `blinky.rs` for that.
-
-#![no_std] // Don't link the standard library (needed for embedded targets)
+/*!
+ * -----------------------------------------------------------------------------
+ *  Project     : Monitor of Temperature, Humidity and Luminosity
+ *  File        : main.rs
+ *  Created by  : Everton Oriente
+ *  Date        : 2025-06-18
+ * -----------------------------------------------------------------------------
+ *  Description : 
+ *      The monitor should acquire information regarding temperature, humidity and luminosity,
+ *      and send this information to the SCADA system to hold and store the information regarding the sensors.
+ *
+ *  Target MCU  : Raspberry Pi Pico W (RP2040 and CYW43)
+ *  Framework   : Embassy, no_std
+ *
+ */
+#![no_std]  // (needed for embedded targets)
 #![no_main] // Disable normal main entry point; we use `#[embassy_executor::main]` instead
 
 // Import required crates and modules
 use cyw43_pio::{PioSpi, DEFAULT_CLOCK_DIVIDER};
 use defmt::*; // For logging via RTT
 use embassy_executor::Spawner;
+//use embassy_rp::adc::{Adc, Channel, Config as AdcConfig, InterruptHandler};
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::{DMA_CH0, PIO0};
@@ -21,6 +33,11 @@ use {defmt_rtt as _, panic_probe as _}; // RTT logging and panic handler
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
 });
+
+// Bind the interrupt handler to  ADC IRQ
+//bind_interrupts!(struct Irqs {
+//    ADC_IRQ_FIFO => InterruptHandler;
+//});
 
 /// Background task for running the CYW43 Wi-Fi driver.
 /// This must be running at all times for the chip to function.
@@ -45,11 +62,34 @@ async fn led_blink_task(mut control: cyw43::Control<'static>, delay: Duration) {
     }
 }
 
+// LED blink task - to the gpio in the board 
+#[embassy_executor::task]
+async fn toogle_led(mut led: Output<'static>){
+    loop{
+        info!("LED ON");
+        led.set_high();
+        Timer::after_millis(1500).await;
+
+        info!("LED OFF");
+        led.set_low();
+        Timer::after_millis(700).await;
+    }
+}
+
 /// Main async entry point
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
+    // Information thats the MCU has started the boot process
+    info!("Initializing the system");
     // Initialize Embassy peripherals and clocks
     let p = embassy_rp::init(Default::default());
+    // The peripherals has initialized
+    info!("Peripherals has initialized with sucess");
+    // Create an Output to the LED
+    let blinky_led = Output::new(p.PIN_16, Level::Low); // Led external
+    // Create an ADC to read the luminosity
+    //let mut adc = Adc::new(p.ADC, Irqs, AdcConfig::default());
+    //let mut adc_0 = Channel::new_pin(p.PIN_26, Pull::Down);
 
     // Load firmware for CYW43 Wi-Fi chip
     let fw = include_bytes!("../cyw43-firmware/43439A0.bin");
@@ -99,4 +139,7 @@ async fn main(spawner: Spawner) {
 
     // Spawn the LED blinking task with desired delay
     unwrap!(spawner.spawn(led_blink_task(control, delay)));
+
+    // Spawn the LED task
+    spawner.spawn(toogle_led(blinky_led)).unwrap();
 }
