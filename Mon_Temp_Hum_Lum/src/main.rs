@@ -20,23 +20,28 @@
 use cyw43_pio::{PioSpi, DEFAULT_CLOCK_DIVIDER};
 use defmt::*; // For logging via RTT
 use embassy_executor::Spawner;
-//use embassy_rp::adc::{Adc, Channel, Config as AdcConfig, InterruptHandler};
+use embassy_rp::adc::{Adc, Async, Channel, Config as AdcConfig, InterruptHandler as AdcIrq};
 use embassy_rp::bind_interrupts;
-use embassy_rp::gpio::{Level, Output};
+use embassy_rp::gpio::{Level, Output, Pull};
 use embassy_rp::peripherals::{DMA_CH0, PIO0};
-use embassy_rp::pio::{InterruptHandler, Pio};
+use embassy_rp::pio::{InterruptHandler as PioIrq, Pio};
 use embassy_time::{Duration, Timer};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _}; // RTT logging and panic handler
 
-// Bind the interrupt handler to PIO0 IRQ
+// Bind the interrupts handlers ,if it is needed more IRQ we just need to declare here on this struct like I2C
 bind_interrupts!(struct Irqs {
-    PIO0_IRQ_0 => InterruptHandler<PIO0>;
+    // Bind the interrupt handler to  PIO IRQ
+    PIO0_IRQ_0 => PioIrq<PIO0>;
+
+    // Bind the interrupt handler to  ADC IRQ
+    ADC_IRQ_FIFO => AdcIrq;
+
 });
 
 // Bind the interrupt handler to  ADC IRQ
 //bind_interrupts!(struct Irqs {
-//    ADC_IRQ_FIFO => InterruptHandler;
+    
 //});
 
 /// Background task for running the CYW43 Wi-Fi driver.
@@ -68,14 +73,58 @@ async fn toogle_led(mut led: Output<'static>){
     loop{
         info!("LED ON");
         led.set_high();
-        Timer::after_millis(1500).await;
+        Timer::after_millis(2500).await;
 
         info!("LED OFF");
         led.set_low();
-        Timer::after_millis(700).await;
+        Timer::after_millis(2500).await;
     }
 }
 
+#[embassy_executor::task]
+async fn read_luminosity(mut adc_lum: Adc<'static, Async>, mut chan: Channel<'static>){// Select the ADC channel for luminosity, mode of the ADC and which channel to use (ADC0 to ADC3)
+    loop{
+        info!("Reading luminosity");
+        match adc_lum.read(&mut chan).await{
+            Ok(value) => {
+                info!("Luminosity: {}", value);
+            }
+            Err(e) => {
+                error!("Error reading luminosity: {}", e);
+            }
+        }
+        Timer::after_millis(1000).await;
+    }
+}
+/*
+#[embassy_executor::task]
+async fn read_temperature_die(mut adc_temp: Adc<'static, Async>, mut chan: Channel<'static>){// Select the ADC channel for temperature sensor inside die, mode of the ADC and which channel to use (ADC4)      
+    loop{
+        loop {
+            // Read raw ADC value from internal temperature sensor (channel 4)
+            match adc.read_internal_temp_sensor().await {
+                Ok(raw_value) => {
+                    // Convert ADC raw value (12-bit) to voltage
+                    let v_ref = 3.3; // typical reference voltage for RP2040 ADC
+                    let voltage = raw_value as f32 * v_ref / 4096.0;
+
+                    // Convert voltage to temperature using RP2040 formula from datasheet
+                    let temperature = 27.0 - (voltage - 0.706) / 0.001721;
+
+                    info!("Raw: {}, Voltage: {} V, Temp: {} °C", raw_value, voltage, temperature);
+                    }
+                Err(e) => {
+                    warn!("Failed to read internal temp sensor: {:?}", e);
+                    }
+            }
+
+            Timer::after_millis(1000).await;
+        }   
+        
+    }
+}
+
+*/
 /// Main async entry point
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -87,9 +136,12 @@ async fn main(spawner: Spawner) {
     info!("Peripherals has initialized with sucess");
     // Create an Output to the LED
     let blinky_led = Output::new(p.PIN_16, Level::Low); // Led external
-    // Create an ADC to read the luminosity
-    //let mut adc = Adc::new(p.ADC, Irqs, AdcConfig::default());
-    //let mut adc_0 = Channel::new_pin(p.PIN_26, Pull::Down);
+    // Create an ADC peripheral
+    let adc = Adc::new(p.ADC, Irqs, AdcConfig::default());
+    // Create the ADC thats read the internal temperature of the DIE, like usage in the watchdog feed, if the temperature goes high we turn off the system
+    //let temp_adc = Channel::new_temp_sensor(p.ADC_TEMP_SENSOR);
+    // Create the ADC 0 to read the luminosity of the system
+    let lum_adc_0 = Channel::new_pin(p.PIN_26, Pull::Down);
 
     // Load firmware for CYW43 Wi-Fi chip
     let fw = include_bytes!("../cyw43-firmware/43439A0.bin");
@@ -135,11 +187,17 @@ async fn main(spawner: Spawner) {
     control.set_power_management(cyw43::PowerManagementMode::PowerSave).await;
 
     // Configure delay for blinking LED
-    let delay = Duration::from_millis(500);
+    let delay = Duration::from_millis(5000);
 
     // Spawn the LED blinking task with desired delay
     unwrap!(spawner.spawn(led_blink_task(control, delay)));
 
     // Spawn the LED task
     spawner.spawn(toogle_led(blinky_led)).unwrap();
+
+    // Spawn the luminosity task to read the luminosity
+    unwrap!(spawner.spawn(read_luminosity(adc, lum_adc_0)));
+
+    // Spawn the temperature task to read the temperature
+    //unwrap!(spawner.spawn(read_temperature_die(adc, temp_adc)));
 }
