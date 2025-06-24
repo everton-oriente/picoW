@@ -27,7 +27,14 @@ use embassy_rp::peripherals::{DMA_CH0, PIO0};
 use embassy_rp::pio::{InterruptHandler as PioIrq, Pio};
 use embassy_time::{Duration, Timer};
 use static_cell::StaticCell;
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_sync::mutex::Mutex;
+use core::cell::RefCell;
 use {defmt_rtt as _, panic_probe as _}; // RTT logging and panic handler
+
+
+
+
 
 // Bind the interrupts handlers ,if it is needed more IRQ we just need to declare here on this struct like I2C
 bind_interrupts!(struct Irqs {
@@ -81,50 +88,52 @@ async fn toogle_led(mut led: Output<'static>){
     }
 }
 
+// This task is used to read all the ADC channels regarding the RPI Pico W, where ADC0-ADC2 can be used to measure anything from 0 to 3.3V.
+// ADC3 is used to measure the temperature die of the RP2040 or RP2350.
 #[embassy_executor::task]
-async fn read_luminosity(mut adc_lum: Adc<'static, Async>, mut chan: Channel<'static>){// Select the ADC channel for luminosity, mode of the ADC and which channel to use (ADC0 to ADC3)
-    loop{
-        info!("Reading luminosity");
-        match adc_lum.read(&mut chan).await{
-            Ok(value) => {
-                info!("Luminosity: {}", value);
-            }
-            Err(e) => {
-                error!("Error reading luminosity: {}", e);
-            }
+async fn read_adc_channels(
+    adc_mutex: &'static Mutex<NoopRawMutex, RefCell<Adc<'static, Async>>>,
+    mut chan_0: Channel<'static>,   // Luminosity
+    //mut chan_1: Channel<'static>,
+    //mut chan_2: Channel<'static>,
+    mut chan_temp: Channel<'static>, // Temperature of the DIE
+) {
+    loop {
+        info!("Reading luminosity...");
+        let adc = adc_mutex.lock().await;
+        match adc.borrow_mut().read(&mut chan_0).await {
+            Ok(value) => info!("Luminosity: {}", value),
+            Err(e) => error!("ADC read error: {}", e),
         }
-        Timer::after_millis(1000).await;
-    }
-}
-/*
-#[embassy_executor::task]
-async fn read_temperature_die(mut adc_temp: Adc<'static, Async>, mut chan: Channel<'static>){// Select the ADC channel for temperature sensor inside die, mode of the ADC and which channel to use (ADC4)      
-    loop{
-        loop {
-            // Read raw ADC value from internal temperature sensor (channel 4)
-            match adc.read_internal_temp_sensor().await {
-                Ok(raw_value) => {
-                    // Convert ADC raw value (12-bit) to voltage
-                    let v_ref = 3.3; // typical reference voltage for RP2040 ADC
-                    let voltage = raw_value as f32 * v_ref / 4096.0;
-
-                    // Convert voltage to temperature using RP2040 formula from datasheet
-                    let temperature = 27.0 - (voltage - 0.706) / 0.001721;
-
-                    info!("Raw: {}, Voltage: {} V, Temp: {} °C", raw_value, voltage, temperature);
-                    }
-                Err(e) => {
-                    warn!("Failed to read internal temp sensor: {:?}", e);
-                    }
+        /*
+        info!("Reading ADC_1...");
+        match adc.borrow_mut().read(&mut chan_1).await {
+            Ok(value) => info!("ADC_1: {}", value),
+            Err(e) => error!("ADC read error: {}", e),
+        }
+        */
+        /*
+        info!("Reading ADC_2...");
+        match adc.borrow_mut().read(&mut chan_2).await {
+            Ok(value) => info!("ADC_2: {}", value),
+            Err(e) => error!("ADC read error: {}", e),
+        }
+        */
+        // The temperature should never rises up to 75°C, because this is the limit of the chip.
+        info!("Reading temperature of the die...");
+        match adc.borrow_mut().read(&mut chan_temp).await {
+            Ok(raw) => {
+                let voltage = raw as f32 * 3.3 / 4096.0;
+                let temp = 27.0 - (voltage - 0.706) / 0.001721;
+                info!("Temp Die: {} °C (raw: {})", temp, raw);
             }
-
-            Timer::after_millis(1000).await;
-        }   
-        
+            Err(e) => error!("Temp read error: {}", e),
+        }
+        Timer::after_millis(1200).await;
     }
 }
 
-*/
+
 /// Main async entry point
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -138,10 +147,18 @@ async fn main(spawner: Spawner) {
     let blinky_led = Output::new(p.PIN_16, Level::Low); // Led external
     // Create an ADC peripheral
     let adc = Adc::new(p.ADC, Irqs, AdcConfig::default());
+    // Create a mutex to protect the ADC
+    static ADC: StaticCell<Mutex<NoopRawMutex, RefCell<Adc<'static,Async>>>> = StaticCell::new();
+    // Initialize the ADC
+    let adc_mutex = ADC.init(Mutex::new(RefCell::new(adc)));
     // Create the ADC thats read the internal temperature of the DIE, like usage in the watchdog feed, if the temperature goes high we turn off the system
-    //let temp_adc = Channel::new_temp_sensor(p.ADC_TEMP_SENSOR);
+    let temp_adc = Channel::new_temp_sensor(p.ADC_TEMP_SENSOR);
     // Create the ADC 0 to read the luminosity of the system
     let lum_adc_0 = Channel::new_pin(p.PIN_26, Pull::Down);
+    // Create the ADC 1 to read the ADC 1
+    //let adc_1 = Channel::new_pin(p.PIN_27, Pull::Down);
+    // Create the ADC 2 to read the ADC 2
+    //let adc_2 = Channel::new_pin(p.PIN_28, Pull::Down);
 
     // Load firmware for CYW43 Wi-Fi chip
     let fw = include_bytes!("../cyw43-firmware/43439A0.bin");
@@ -196,8 +213,6 @@ async fn main(spawner: Spawner) {
     spawner.spawn(toogle_led(blinky_led)).unwrap();
 
     // Spawn the luminosity task to read the luminosity
-    unwrap!(spawner.spawn(read_luminosity(adc, lum_adc_0)));
+    unwrap!(spawner.spawn(read_adc_channels(adc_mutex, lum_adc_0, temp_adc))); // Here you should add in compliance how many adc are going to use
 
-    // Spawn the temperature task to read the temperature
-    //unwrap!(spawner.spawn(read_temperature_die(adc, temp_adc)));
 }
