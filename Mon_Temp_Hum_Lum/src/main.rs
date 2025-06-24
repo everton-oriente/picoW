@@ -27,12 +27,15 @@ use embassy_rp::peripherals::{DMA_CH0, PIO0};
 use embassy_rp::pio::{InterruptHandler as PioIrq, Pio};
 use embassy_time::{Duration, Timer};
 use static_cell::StaticCell;
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_sync::blocking_mutex::raw::{ThreadModeRawMutex};
 use embassy_sync::mutex::Mutex;
+use embassy_sync::channel::{Channel as SyncChannel};
 use core::cell::RefCell;
 use {defmt_rtt as _, panic_probe as _}; // RTT logging and panic handler
 
+static ADC_CHANNEL_0:SyncChannel<ThreadModeRawMutex,u16,2> = SyncChannel::new();
 
+static ADC_CHANNEL_TEMP:SyncChannel<ThreadModeRawMutex,u16,2> = SyncChannel::new();
 
 
 
@@ -92,7 +95,7 @@ async fn toogle_led(mut led: Output<'static>){
 // ADC3 is used to measure the temperature die of the RP2040 or RP2350.
 #[embassy_executor::task]
 async fn read_adc_channels(
-    adc_mutex: &'static Mutex<NoopRawMutex, RefCell<Adc<'static, Async>>>,
+    adc_mutex: &'static Mutex<ThreadModeRawMutex, RefCell<Adc<'static, Async>>>,
     mut chan_0: Channel<'static>,   // Luminosity
     //mut chan_1: Channel<'static>,
     //mut chan_2: Channel<'static>,
@@ -102,7 +105,11 @@ async fn read_adc_channels(
         info!("Reading luminosity...");
         let adc = adc_mutex.lock().await;
         match adc.borrow_mut().read(&mut chan_0).await {
-            Ok(value) => info!("Luminosity: {}", value),
+            Ok(value) =>{ 
+                info!("Luminosity: {}", value);
+                // Send the value to the channel
+                ADC_CHANNEL_0.send(value).await;
+            }
             Err(e) => error!("ADC read error: {}", e),
         }
         /*
@@ -126,6 +133,7 @@ async fn read_adc_channels(
                 let voltage = raw as f32 * 3.3 / 4096.0;
                 let temp = 27.0 - (voltage - 0.706) / 0.001721;
                 info!("Temp Die: {} °C (raw: {})", temp, raw);
+                ADC_CHANNEL_TEMP.send(raw).await;
             }
             Err(e) => error!("Temp read error: {}", e),
         }
@@ -133,6 +141,23 @@ async fn read_adc_channels(
     }
 }
 
+#[embassy_executor::task]
+async fn process_adc_channel_0(){
+    
+    loop{
+        let value = ADC_CHANNEL_0.receive().await;
+        info!("LUZ CHEGOU COM: {}", value);
+    }
+}
+
+#[embassy_executor::task]
+async fn process_adc_channel_temp(){
+
+    loop{
+        let value = ADC_CHANNEL_TEMP.receive().await;
+        info!("TEMP CHEGOU COM: {}", value);
+    }
+}
 
 /// Main async entry point
 #[embassy_executor::main]
@@ -148,7 +173,7 @@ async fn main(spawner: Spawner) {
     // Create an ADC peripheral
     let adc = Adc::new(p.ADC, Irqs, AdcConfig::default());
     // Create a mutex to protect the ADC
-    static ADC: StaticCell<Mutex<NoopRawMutex, RefCell<Adc<'static,Async>>>> = StaticCell::new();
+    static ADC: StaticCell<Mutex<ThreadModeRawMutex, RefCell<Adc<'static,Async>>>> = StaticCell::new();
     // Initialize the ADC
     let adc_mutex = ADC.init(Mutex::new(RefCell::new(adc)));
     // Create the ADC thats read the internal temperature of the DIE, like usage in the watchdog feed, if the temperature goes high we turn off the system
@@ -214,5 +239,11 @@ async fn main(spawner: Spawner) {
 
     // Spawn the luminosity task to read the luminosity
     unwrap!(spawner.spawn(read_adc_channels(adc_mutex, lum_adc_0, temp_adc))); // Here you should add in compliance how many adc are going to use
+
+    // Spawn the process_adc_channel_0 task
+    unwrap!(spawner.spawn(process_adc_channel_0()));
+
+    // Spawn the process_adc_channel_temp task
+    unwrap!(spawner.spawn(process_adc_channel_temp()));
 
 }
