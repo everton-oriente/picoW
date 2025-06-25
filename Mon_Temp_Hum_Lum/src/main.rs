@@ -23,7 +23,7 @@ use embassy_executor::Spawner;
 use embassy_rp::adc::{Adc, Async, Channel, Config as AdcConfig, InterruptHandler as AdcIrq};
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output, Pull};
-use embassy_rp::peripherals::{DMA_CH0, PIO0};
+use embassy_rp::peripherals::{DMA_CH0, PIO0, I2C0};
 use embassy_rp::pio::{InterruptHandler as PioIrq, Pio};
 use embassy_time::{Duration, Timer};
 use static_cell::StaticCell;
@@ -31,11 +31,23 @@ use embassy_sync::blocking_mutex::raw::{ThreadModeRawMutex};
 use embassy_sync::mutex::Mutex;
 use embassy_sync::channel::{Channel as SyncChannel};
 use core::cell::RefCell;
+// Crate regarding I2C Oled Display
+use embassy_rp::i2c::{Async as I2c_async, Config as I2c_config, I2c, InterruptHandler};
+use embedded_graphics::{
+    mono_font::{ascii::FONT_6X10, MonoTextStyle},
+    pixelcolor::BinaryColor,
+    prelude::*,
+    text::Text,
+};
+use heapless::String;
+use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306};
+// Crate regarding I2C Oled Display
+
 use {defmt_rtt as _, panic_probe as _}; // RTT logging and panic handler
 
 static ADC_CHANNEL_0:SyncChannel<ThreadModeRawMutex,u16,2> = SyncChannel::new();
 
-static ADC_CHANNEL_TEMP:SyncChannel<ThreadModeRawMutex,u16,2> = SyncChannel::new();
+static ADC_CHANNEL_TEMP:SyncChannel<ThreadModeRawMutex,f32,2> = SyncChannel::new();
 
 
 
@@ -46,6 +58,9 @@ bind_interrupts!(struct Irqs {
 
     // Bind the interrupt handler to  ADC IRQ
     ADC_IRQ_FIFO => AdcIrq;
+
+    // Bind the interrupt handler to  I2C IRQ
+    I2C0_IRQ => InterruptHandler<I2C0>; 
 
 });
 
@@ -133,7 +148,7 @@ async fn read_adc_channels(
                 let voltage = raw as f32 * 3.3 / 4096.0;
                 let temp = 27.0 - (voltage - 0.706) / 0.001721;
                 info!("Temp Die: {} °C (raw: {})", temp, raw);
-                ADC_CHANNEL_TEMP.send(raw).await;
+                ADC_CHANNEL_TEMP.send(temp).await;
             }
             Err(e) => error!("Temp read error: {}", e),
         }
@@ -159,6 +174,64 @@ async fn process_adc_channel_temp(){
     }
 }
 
+#[embassy_executor::task]
+async fn oled_task(i2c: I2c<'static, I2C0, I2c_async>) {
+    let interface = I2CDisplayInterface::new(i2c);
+    let mut display = Ssd1306::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
+        .into_buffered_graphics_mode();
+
+    if let Err(_) = display.init() {
+        defmt::error!("Display init failed");
+        core::panic!("Display init failed");
+    }
+
+    let header_style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
+    let temp_style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
+
+    // Header text
+    let header_text = "Temp";
+    let header_x = (128 - header_text.len() as i32 * 6) / 2;
+    let header_y = 22;
+
+    let temp_x = 30;
+    let temp_y = 30;
+
+    // ADC 1 header
+    let header_text_adc_1 = "Value of ADC 1";
+    let header_x_adc_1 = (128 - header_text_adc_1.len() as i32 * 6) / 2;
+    let header_y_adc_1 = 42;
+
+    let temp_x_adc_1 = 50;
+    let temp_y_adc_1 = 50;
+
+    // Dynamic text buffer (replace with actual sensor values later)
+    let mut buffer: String<32> = String::new();
+    buffer.push_str("Hello World Smart").ok();
+
+    if let Err(_) = display.clear(BinaryColor::Off) {
+        defmt::error!("Clear failed");
+    }
+
+    Text::new(header_text, Point::new(header_x, header_y), header_style)
+        .draw(&mut display)
+        .unwrap();
+
+    Text::new(&buffer, Point::new(temp_x, temp_y), temp_style)
+        .draw(&mut display)
+        .unwrap();
+
+    Text::new(header_text_adc_1, Point::new(header_x_adc_1, header_y_adc_1), header_style)
+        .draw(&mut display)
+        .unwrap();
+
+    Text::new("1234", Point::new(temp_x_adc_1, temp_y_adc_1), temp_style)
+        .draw(&mut display)
+        .unwrap();
+
+    if let Err(_) = display.flush() {
+        defmt::error!("Flush failed");
+    }
+}
 /// Main async entry point
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -170,6 +243,7 @@ async fn main(spawner: Spawner) {
     info!("Peripherals has initialized with sucess");
     // Create an Output to the LED
     let blinky_led = Output::new(p.PIN_16, Level::Low); // Led external
+    
     // Create an ADC peripheral
     let adc = Adc::new(p.ADC, Irqs, AdcConfig::default());
     // Create a mutex to protect the ADC
@@ -184,6 +258,14 @@ async fn main(spawner: Spawner) {
     //let adc_1 = Channel::new_pin(p.PIN_27, Pull::Down);
     // Create the ADC 2 to read the ADC 2
     //let adc_2 = Channel::new_pin(p.PIN_28, Pull::Down);
+
+    // Configure I2C
+    let sda = p.PIN_20;
+    let scl = p.PIN_21;
+
+    let mut i2c_config = I2c_config::default();
+    i2c_config.frequency = 100_000;
+    let i2c = I2c::new_async(p.I2C0, scl, sda, Irqs, i2c_config);
 
     // Load firmware for CYW43 Wi-Fi chip
     let fw = include_bytes!("../cyw43-firmware/43439A0.bin");
@@ -245,5 +327,8 @@ async fn main(spawner: Spawner) {
 
     // Spawn the process_adc_channel_temp task
     unwrap!(spawner.spawn(process_adc_channel_temp()));
+
+    // Spawn the I2C Display task
+    unwrap!(spawner.spawn(oled_task(i2c)));
 
 }
