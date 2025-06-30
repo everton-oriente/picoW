@@ -41,6 +41,7 @@ use embedded_graphics::{
 };
 use heapless::String;
 use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306};
+use core::fmt::Write;
 // Crate regarding I2C Oled Display
 
 use {defmt_rtt as _, panic_probe as _}; // RTT logging and panic handler
@@ -189,24 +190,17 @@ async fn oled_task(i2c: I2c<'static, I2C0, I2c_async>) {
     let temp_style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
 
     // Header text
-    let header_text = "Temp";
+    let header_text = "Smart Vivarium";
     let header_x = (128 - header_text.len() as i32 * 6) / 2;
     let header_y = 22;
 
-    let temp_x = 30;
-    let temp_y = 30;
-
-    // ADC 1 header
-    let header_text_adc_1 = "Value of ADC 1";
-    let header_x_adc_1 = (128 - header_text_adc_1.len() as i32 * 6) / 2;
-    let header_y_adc_1 = 42;
-
-    let temp_x_adc_1 = 50;
-    let temp_y_adc_1 = 50;
-
     // Dynamic text buffer (replace with actual sensor values later)
     let mut buffer: String<32> = String::new();
-    buffer.push_str("Hello World Smart").ok();
+    core::write!(buffer, "Temp: {}.{} deg C", 25, 712).unwrap();
+
+
+    let buffer_x = (128 - buffer.len() as i32 * 6) / 2;
+    let buffer_y = 30;
 
     if let Err(_) = display.clear(BinaryColor::Off) {
         defmt::error!("Clear failed");
@@ -216,15 +210,7 @@ async fn oled_task(i2c: I2c<'static, I2C0, I2c_async>) {
         .draw(&mut display)
         .unwrap();
 
-    Text::new(&buffer, Point::new(temp_x, temp_y), temp_style)
-        .draw(&mut display)
-        .unwrap();
-
-    Text::new(header_text_adc_1, Point::new(header_x_adc_1, header_y_adc_1), header_style)
-        .draw(&mut display)
-        .unwrap();
-
-    Text::new("1234", Point::new(temp_x_adc_1, temp_y_adc_1), temp_style)
+    Text::new(&buffer, Point::new(buffer_x, buffer_y), temp_style)
         .draw(&mut display)
         .unwrap();
 
