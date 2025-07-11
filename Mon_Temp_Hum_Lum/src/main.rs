@@ -29,7 +29,8 @@ use embassy_time::{Duration, Timer};
 use static_cell::StaticCell;
 use embassy_sync::blocking_mutex::raw::{ThreadModeRawMutex};
 use embassy_sync::mutex::Mutex;
-use embassy_sync::channel::{Channel as SyncChannel};
+//use embassy_sync::channel::{Channel as SyncChannel};
+use embassy_sync::watch::{DynReceiver, Watch};
 use core::cell::RefCell;
 // Crate regarding I2C Oled Display
 use embassy_rp::i2c::{Async as I2c_async, Config as I2c_config, I2c, InterruptHandler};
@@ -46,11 +47,20 @@ use core::fmt::Write;
 
 use {defmt_rtt as _, panic_probe as _}; // RTT logging and panic handler
 
-static ADC_CHANNEL_0:SyncChannel<ThreadModeRawMutex,u16,2> = SyncChannel::new();
+const ADC0_CONSUMERS: usize = 1;
+static ADC0_CHANNEL: Watch<ThreadModeRawMutex, u16, ADC0_CONSUMERS> = Watch::new();
 
-static ADC_CHANNEL_TEMP:SyncChannel<ThreadModeRawMutex,f32,2> = SyncChannel::new();
+pub fn get_receiver_adc0() -> Option<DynReceiver<'static, u16>> {
+    ADC0_CHANNEL.dyn_receiver()
+}
 
 
+const ADCTEMP_CONSUMERS: usize = 1;
+static ADCTEMP_CHANNEL: Watch<ThreadModeRawMutex, u16, ADCTEMP_CONSUMERS> = Watch::new();
+
+pub fn get_receiver_adctemp() -> Option<DynReceiver<'static, u16>> {
+    ADCTEMP_CHANNEL.dyn_receiver()
+}
 
 // Bind the interrupts handlers ,if it is needed more IRQ we just need to declare here on this struct like I2C
 bind_interrupts!(struct Irqs {
@@ -120,11 +130,15 @@ async fn read_adc_channels(
     loop {
         info!("Reading luminosity...");
         let adc = adc_mutex.lock().await;
+        let tx_adc0 = ADC0_CHANNEL.sender();
+        let tx_adctemp = ADCTEMP_CHANNEL.sender();
+
         match adc.borrow_mut().read(&mut chan_0).await {
             Ok(value) =>{ 
                 info!("Luminosity: {}", value);
                 // Send the value to the channel
-                ADC_CHANNEL_0.send(value).await;
+                
+                tx_adc0.send(value);
             }
             Err(e) => error!("ADC read error: {}", e),
         }
@@ -149,7 +163,7 @@ async fn read_adc_channels(
                 let voltage = raw as f32 * 3.3 / 4096.0;
                 let temp = 27.0 - (voltage - 0.706) / 0.001721;
                 info!("Temp Die: {} °C (raw: {})", temp, raw);
-                ADC_CHANNEL_TEMP.send(temp).await;
+                tx_adctemp.send(raw);
             }
             Err(e) => error!("Temp read error: {}", e),
         }
@@ -161,8 +175,9 @@ async fn read_adc_channels(
 async fn process_adc_channel_0(){
     
     loop{
-        let value = ADC_CHANNEL_0.receive().await;
-        info!("LUZ CHEGOU COM: {}", value);
+        let mut rx = get_receiver_adc0().unwrap();
+        let adc0 = rx.get().await;
+        info!("LUZ CHEGOU COM: {}", adc0);
     }
 }
 
@@ -170,8 +185,29 @@ async fn process_adc_channel_0(){
 async fn process_adc_channel_temp(){
 
     loop{
-        let value = ADC_CHANNEL_TEMP.receive().await;
-        info!("TEMP CHEGOU COM: {}", value);
+        let mut rx = get_receiver_adctemp().unwrap();
+        let adctemp = rx.get().await;
+        info!("TEMP CHEGOU COM: {}", adctemp);
+    }
+}
+
+#[embassy_executor::task]
+async fn process_adc_channel_temp_1(){
+
+    loop{
+        let mut rx = get_receiver_adctemp().unwrap();
+        let adctemp = rx.get().await;
+        info!("TEMP CHEGOU COM: {}", adctemp);
+    }
+}
+
+#[embassy_executor::task]
+async fn process_adc_channel_temp_2(){
+
+    loop{
+        let mut rx = get_receiver_adctemp().unwrap();
+        let adctemp = rx.get().await;
+        info!("TEMP CHEGOU COM: {}", adctemp);
     }
 }
 
@@ -313,6 +349,12 @@ async fn main(spawner: Spawner) {
 
     // Spawn the process_adc_channel_temp task
     unwrap!(spawner.spawn(process_adc_channel_temp()));
+
+    // Spawn the process_adc_channel_temp task
+    unwrap!(spawner.spawn(process_adc_channel_temp_1()));
+    
+    // Spawn the process_adc_channel_temp task
+    unwrap!(spawner.spawn(process_adc_channel_temp_2()));
 
     // Spawn the I2C Display task
     unwrap!(spawner.spawn(oled_task(i2c)));
