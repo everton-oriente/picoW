@@ -138,7 +138,7 @@ async fn read_adc_channels(
                 info!("Luminosity: {}", value);
                 // Send the value to the channel
                 
-                tx_adc0.send(value);
+                tx_adc0.send(value as u16);
             }
             Err(e) => error!("ADC read error: {}", e),
         }
@@ -167,7 +167,7 @@ async fn read_adc_channels(
             }
             Err(e) => error!("Temp read error: {}", e),
         }
-        Timer::after_millis(5000).await;
+        Timer::after_millis(4000).await;
     }
 }
 
@@ -178,6 +178,7 @@ async fn process_adc_channel_0(){
         let mut rx = get_receiver_adc0().unwrap();
         let adc0 = rx.get().await;
         info!("LUZ CHEGOU COM: {}", adc0);
+        Timer::after_secs(4).await;
     }
 }
 
@@ -188,6 +189,7 @@ async fn process_adc_channel_temp(){
         let mut rx = get_receiver_adctemp().unwrap();
         let adctemp = rx.get().await;
         info!("TEMP CHEGOU COM: {}", adctemp);
+        Timer::after_secs(5).await;
     }
 }
 
