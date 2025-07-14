@@ -167,7 +167,7 @@ async fn read_adc_channels(
             }
             Err(e) => error!("Temp read error: {}", e),
         }
-        Timer::after_millis(1200).await;
+        Timer::after_millis(5000).await;
     }
 }
 
@@ -183,26 +183,6 @@ async fn process_adc_channel_0(){
 
 #[embassy_executor::task]
 async fn process_adc_channel_temp(){
-
-    loop{
-        let mut rx = get_receiver_adctemp().unwrap();
-        let adctemp = rx.get().await;
-        info!("TEMP CHEGOU COM: {}", adctemp);
-    }
-}
-
-#[embassy_executor::task]
-async fn process_adc_channel_temp_1(){
-
-    loop{
-        let mut rx = get_receiver_adctemp().unwrap();
-        let adctemp = rx.get().await;
-        info!("TEMP CHEGOU COM: {}", adctemp);
-    }
-}
-
-#[embassy_executor::task]
-async fn process_adc_channel_temp_2(){
 
     loop{
         let mut rx = get_receiver_adctemp().unwrap();
@@ -349,12 +329,6 @@ async fn main(spawner: Spawner) {
 
     // Spawn the process_adc_channel_temp task
     unwrap!(spawner.spawn(process_adc_channel_temp()));
-
-    // Spawn the process_adc_channel_temp task
-    unwrap!(spawner.spawn(process_adc_channel_temp_1()));
-    
-    // Spawn the process_adc_channel_temp task
-    unwrap!(spawner.spawn(process_adc_channel_temp_2()));
 
     // Spawn the I2C Display task
     unwrap!(spawner.spawn(oled_task(i2c)));
