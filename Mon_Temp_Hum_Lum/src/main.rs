@@ -40,6 +40,8 @@ use embedded_graphics::mono_font::ascii::FONT_6X10;
 use embedded_graphics::pixelcolor::BinaryColor;
 use embedded_graphics::prelude::*;
 use embedded_graphics::text::Text;
+use embedded_graphics::primitives::{Circle, PrimitiveStyle};
+use embedded_graphics::geometry::Point;
 use heapless::String;
 use micromath::F32Ext;
 use ssd1306::prelude::*;
@@ -221,7 +223,7 @@ async fn oled_task(i2c: I2c<'static, I2C0, I2c_async>) {
         let voltage = adctemp as f32 * 3.3 / 4096.0;
         let temp = 27.0 - (voltage - 0.706) / 0.001721;
         let temp_trunk = (temp * 100.0).trunc() / 100.0;
-        core::write!(buffer_temp, "Temp: {} C", temp_trunk).unwrap();
+        core::write!(buffer_temp, "Temp: {}  C", temp_trunk).unwrap();
 
         let buffer_temp_x = (128 - buffer_temp.len() as i32 * 6) / 2; // Calculate the x-coordinate for the text
         let buffer_temp_y = 32; // Set the y-coordinate for the text
@@ -251,6 +253,16 @@ async fn oled_task(i2c: I2c<'static, I2C0, I2c_async>) {
             .unwrap();
         // Display third line
         Text::new(&buffer_lum, Point::new(buffer_lum_x, buffer_lum_y), temp_style)
+            .draw(&mut display)
+            .unwrap();
+
+        // Draw the temperature indicator
+
+        let x_circle = buffer_temp_x + (buffer_temp.len() as i32 * 6) - 12;
+        let y_circle = buffer_temp_y - 6;
+        let degree_pos = Point::new(x_circle, y_circle); // adjust these values as needed
+        Circle::new(degree_pos, 4) // a small filled circle
+            .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
             .draw(&mut display)
             .unwrap();
 
