@@ -19,7 +19,6 @@
 mod modular;
 
 // Import required crates and modules
-use core::cell::RefCell;
 use cyw43_pio::{DEFAULT_CLOCK_DIVIDER, PioSpi};
 use defmt::*; // For logging via RTT
 use embassy_executor::Spawner;
@@ -31,7 +30,7 @@ use embassy_rp::peripherals::{I2C0, PIO0};
 use embassy_rp::pio::{InterruptHandler as PioIrq, Pio};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::mutex::Mutex;
-use embassy_time::Duration;
+use embassy_time::{Duration};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _}; // RTT logging and panic handler
 
@@ -64,9 +63,9 @@ async fn main(spawner: Spawner) {
     // Create an ADC peripheral
     let adc = Adc::new(p.ADC, Irqs, AdcConfig::default());
     // Create a mutex to protect the ADC
-    static ADC: StaticCell<Mutex<ThreadModeRawMutex, RefCell<Adc<'static, Async>>>> = StaticCell::new();
+    static ADC: StaticCell<Mutex<ThreadModeRawMutex, Adc<'static, Async>>> = StaticCell::new();
     // Initialize the ADC
-    let adc_mutex = ADC.init(Mutex::new(RefCell::new(adc)));
+    let adc_mutex = ADC.init(Mutex::new(adc));
     // Create the ADC thats read the internal temperature of the DIE, like usage in the watchdog feed, if the temperature goes high we turn off the system
     let temp_adc = Channel::new_temp_sensor(p.ADC_TEMP_SENSOR);
     // Create the ADC 0 to read the luminosity of the system
@@ -136,7 +135,7 @@ async fn main(spawner: Spawner) {
     unwrap!(spawner.spawn(modular::led_blink_task(control, delay)));
 
     // Spawn the LED task
-    spawner.spawn(modular::toogle_led(blinky_led)).unwrap();
+    unwrap!(spawner.spawn(modular::toogle_led(blinky_led)));
 
     // Spawn the luminosity task to read the luminosity
     unwrap!(spawner.spawn(modular::read_adc_channels(adc_mutex, lum_adc_0, temp_adc))); // Here you should add in compliance how many adc are going to use

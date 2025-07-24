@@ -15,6 +15,8 @@
  *
  */
 
+#![allow(clippy::write_literal, clippy::uninlined_format_args)] // To be possible to use core::write!()
+
 // Crate regarding I2C Oled Display
 use core::fmt::Write;
 
@@ -42,9 +44,10 @@ pub async fn oled_task(i2c: I2c<'static, I2C0, Async>) {
     let mut display =
         Ssd1306::new(interface, DisplaySize128x64, DisplayRotation::Rotate0).into_buffered_graphics_mode();
 
-    if let Err(_) = display.init() {
-        defmt::error!("Display init failed");
-        core::panic!("Display init failed");
+    Timer::after_millis(100).await;
+    if display.init().is_err() {
+        defmt::error!("Display init failed defmt");
+        core::panic!("Display init failed core");
     }
 
     let header_style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
@@ -77,14 +80,14 @@ pub async fn oled_task(i2c: I2c<'static, I2C0, Async>) {
 
         //let lumens = adclum as f32;  // Convert the value of ADC into Lux
         //let lumens_trunk = (lumens * 100.0).trunc() / 100.0;
-
         core::write!(buffer_lum, "Luminosity: {} lux", adclum).unwrap();
 
         let buffer_lum_x = (128 - buffer_lum.len() as i32 * 6) / 2; // Calculate the x-coordinate for the text
         let buffer_lum_y = 44;
 
         // Clear the display
-        if let Err(_) = display.clear(BinaryColor::Off) {
+
+        if display.clear(BinaryColor::Off).is_err() {
             defmt::error!("Clear failed");
         }
         // Display the text in the OLED Display
@@ -111,7 +114,10 @@ pub async fn oled_task(i2c: I2c<'static, I2C0, Async>) {
             .draw(&mut display)
             .unwrap();
 
-        if let Err(_) = display.flush() {
+        //if let Err(_) = display.flush() {
+        //    defmt::error!("Flush failed");
+        //}
+        if display.flush().is_err() {
             defmt::error!("Flush failed");
         }
 

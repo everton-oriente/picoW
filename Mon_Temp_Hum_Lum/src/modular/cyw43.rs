@@ -25,6 +25,7 @@ use {defmt_rtt as _, panic_probe as _}; // RTT logging and panic handler
 /// This must be running at all times for the chip to function.
 #[embassy_executor::task]
 pub async fn cyw43_task(runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>) -> ! {
+    info!("Starting runner cyw43");
     runner.run().await
 }
 

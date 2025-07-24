@@ -15,8 +15,6 @@
  *
  */
 
-use core::cell::RefCell;
-
 use defmt::*; // For logging via RTT
 use embassy_rp::adc::{Adc, Async, Channel};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
@@ -31,6 +29,23 @@ static ADC0_CHANNEL: Watch<ThreadModeRawMutex, u16, ADC0_CONSUMERS> = Watch::new
 pub fn get_receiver_adc0() -> Option<DynReceiver<'static, u16>> {
     ADC0_CHANNEL.dyn_receiver()
 }
+/*
+const ADC1_CONSUMERS: usize = 1;
+static ADC1_CHANNEL: Watch<ThreadModeRawMutex, u16, ADC1_CONSUMERS> = Watch::new();
+
+pub fn get_receiver_adc1() -> Option<DynReceiver<'static, u16>> {
+    ADC1_CHANNEL.dyn_receiver()
+}
+*/
+
+/*
+const ADC2_CONSUMERS: usize = 1;
+static ADC2_CHANNEL: Watch<ThreadModeRawMutex, u16, ADC2_CONSUMERS> = Watch::new();
+
+pub fn get_receiver_adc2() -> Option<DynReceiver<'static, u16>> {
+    ADC2_CHANNEL.dyn_receiver()
+}
+*/
 
 const ADCTEMP_CONSUMERS: usize = 2;
 static ADCTEMP_CHANNEL: Watch<ThreadModeRawMutex, u16, ADCTEMP_CONSUMERS> = Watch::new();
@@ -43,7 +58,7 @@ pub fn get_receiver_adctemp() -> Option<DynReceiver<'static, u16>> {
 // ADC3 is used to measure the temperature die of the RP2040 or RP2350.
 #[embassy_executor::task]
 pub async fn read_adc_channels(
-    adc_mutex: &'static Mutex<ThreadModeRawMutex, RefCell<Adc<'static, Async>>>,
+    adc_mutex: &'static Mutex<ThreadModeRawMutex, Adc<'static, Async>>,
     mut chan_0: Channel<'static>, // Luminosity
     //mut chan_1: Channel<'static>,
     //mut chan_2: Channel<'static>,
@@ -51,44 +66,75 @@ pub async fn read_adc_channels(
 ) {
     loop {
         info!("Reading luminosity...");
-        let adc = adc_mutex.lock().await;
         let tx_adc0 = ADC0_CHANNEL.sender();
+        // let tx_adc1 = ADC1_CHANNEL.sender();
+        // let tx_adc2 = ADC2_CHANNEL.sender();
         let tx_adctemp = ADCTEMP_CHANNEL.sender();
 
-        match adc.borrow_mut().read(&mut chan_0).await {
+        let result_adc_0 = {
+            let mut adc_channel_0 = adc_mutex.lock().await;
+            adc_channel_0.read(&mut chan_0).await
+        };
+
+        match result_adc_0 {
             Ok(value) => {
                 info!("Luminosity: {}", value);
                 // Send the value to the channel
-
                 tx_adc0.send(value);
             }
             Err(e) => error!("ADC read error: {}", e),
         }
         /*
         info!("Reading ADC_1...");
-        match adc.borrow_mut().read(&mut chan_1).await {
-            Ok(value) => info!("ADC_1: {}", value),
+        let result_adc_1 = {
+            let adc_refcell_adc_channel_1 = adc_mutex.lock().await;
+            let mut adc_channel_1 = adc_refcell_adc_channel_1.borrow_mut();
+            adc_channel_1.read(&mut chan_1).await
+        };
+
+        match result_adc_1 {
+            Ok(value) => {
+                info!("Luminosity: {}", value);
+                // Send the value to the channel
+                tx_adc1.send(value);
+            }
             Err(e) => error!("ADC read error: {}", e),
         }
         */
         /*
         info!("Reading ADC_2...");
-        match adc.borrow_mut().read(&mut chan_2).await {
-            Ok(value) => info!("ADC_2: {}", value),
+        let result_adc_2 = {
+            let adc_refcell_adc_channel_2 = adc_mutex.lock().await;
+            let mut adc_channel_2 = adc_refcell_adc_channel_2.borrow_mut();
+            adc_channel_2.read(&mut chan_2).await
+        };
+
+        match result_adc_2 {
+            Ok(value) => {
+                info!("Luminosity: {}", value);
+                // Send the value to the channel
+                tx_adc2.send(value);
+            }
             Err(e) => error!("ADC read error: {}", e),
         }
         */
         // The temperature should never rises up to 75°C, because this is the limit of the chip.
         info!("Reading temperature of the die...");
-        match adc.borrow_mut().read(&mut chan_temp).await {
+        let result_adc_temp = {
+            let mut adc_channel_temp = adc_mutex.lock().await;
+            adc_channel_temp.read(&mut chan_temp).await
+        };
+
+        match result_adc_temp {
             Ok(raw) => {
                 let voltage = raw as f32 * 3.3 / 4096.0;
                 let temp = 27.0 - (voltage - 0.706) / 0.001721;
                 info!("Temp Die: {} °C (raw: {})", temp, raw);
-                tx_adctemp.send(raw); // Less the number higher the temperature
+                tx_adctemp.send(raw);
             }
             Err(e) => error!("Temp read error: {}", e),
         }
+        
         Timer::after_millis(3800).await;
     }
 }
