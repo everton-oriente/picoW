@@ -2,7 +2,7 @@
 /*!
  * -----------------------------------------------------------------------------
  *  Project     : Channel/Watch file for the modular project.
- *  File        : adc.rs
+ *  File        : channel_temp.rs
  *  Created by  : Everton Oriente
  *  Date        : 2025-07-22
  *  * -----------------------------------------------------------------------------
