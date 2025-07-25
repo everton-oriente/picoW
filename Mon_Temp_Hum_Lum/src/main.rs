@@ -24,7 +24,7 @@ use defmt::*; // For logging via RTT
 use embassy_executor::Spawner;
 use embassy_rp::adc::{Adc, Async, Channel, Config as AdcConfig, InterruptHandler as AdcIrq};
 use embassy_rp::bind_interrupts;
-use embassy_rp::gpio::{Level, Output, Pull};
+use embassy_rp::gpio::{Flex, Level, Output, Pull, AnyPin};
 use embassy_rp::i2c::{Config as I2c_config, I2c, InterruptHandler};
 use embassy_rp::peripherals::{I2C0, PIO0};
 use embassy_rp::pio::{InterruptHandler as PioIrq, Pio};
@@ -74,6 +74,10 @@ async fn main(spawner: Spawner) {
     //let adc_1 = Channel::new_pin(p.PIN_27, Pull::Down);
     // Create the ADC 2 to read the ADC 2
     //let adc_2 = Channel::new_pin(p.PIN_28, Pull::Down);
+
+    // Create a GPIO to read the DHT11/DHT22
+    let dht_pin = Flex::new(AnyPin::from(p.PIN_22));
+    
 
     // Configure I2C
     let sda = p.PIN_20;
@@ -148,4 +152,8 @@ async fn main(spawner: Spawner) {
 
     // Spawn the I2C Display task
     unwrap!(spawner.spawn(modular::oled_task(i2c)));
+
+    // Spawn the DHT task
+    unwrap!(spawner.spawn(modular::dht_task(dht_pin)));
+    
 }

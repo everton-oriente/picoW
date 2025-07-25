@@ -22,6 +22,7 @@ mod channel_temp;
 mod cyw43;
 mod led;
 mod oled;
+mod dht;
 
 pub(crate) use adc::*;
 pub(crate) use channel_adc_0::*;
@@ -29,3 +30,4 @@ pub(crate) use channel_temp::*;
 pub(crate) use cyw43::*;
 pub(crate) use led::*;
 pub(crate) use oled::*;
+pub(crate) use dht::*;
