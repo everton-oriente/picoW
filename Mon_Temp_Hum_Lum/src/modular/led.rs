@@ -25,10 +25,10 @@ pub async fn toogle_led(mut led: Output<'static>) {
     loop {
         info!("LED ON");
         led.set_high();
-        Timer::after_millis(2500).await;
+        Timer::after_millis(500).await;
 
         info!("LED OFF");
         led.set_low();
-        Timer::after_millis(2500).await;
+        Timer::after_millis(300_000).await;
     }
 }

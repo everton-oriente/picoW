@@ -28,6 +28,6 @@ pub async fn process_adc_channel_0() {
         let mut rx = get_receiver_adc0().unwrap();
         let adc0 = rx.get().await;
         info!("LUZ CHEGOU COM: {}", adc0);
-        Timer::after_secs(4).await;
+        Timer::after_secs(298).await;
     }
 }

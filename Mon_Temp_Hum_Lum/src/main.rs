@@ -13,6 +13,9 @@
  *  Framework   : Embassy, no_std
  *
  */
+
+// Always compile in release mode, because the dht sensor maybe not work in debug mode
+
 #![no_std] // (needed for embedded targets)
 #![no_main] // Disable normal main entry point; we use `#[embassy_executor::main]` instead
 
@@ -24,16 +27,15 @@ use defmt::*; // For logging via RTT
 use embassy_executor::Spawner;
 use embassy_rp::adc::{Adc, Async, Channel, Config as AdcConfig, InterruptHandler as AdcIrq};
 use embassy_rp::bind_interrupts;
-use embassy_rp::gpio::{Flex, Level, Output, Pull, AnyPin};
+use embassy_rp::gpio::{AnyPin, Flex, Level, Output, Pull};
 use embassy_rp::i2c::{Config as I2c_config, I2c, InterruptHandler};
 use embassy_rp::peripherals::{I2C0, PIO0};
 use embassy_rp::pio::{InterruptHandler as PioIrq, Pio};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::mutex::Mutex;
-use embassy_time::{Duration};
+use embassy_time::Duration;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _}; // RTT logging and panic handler
-
 
 // Bind the interrupts handlers ,if it is needed more IRQ we just need to declare here on this struct like I2C
 bind_interrupts!(struct Irqs {
@@ -77,7 +79,6 @@ async fn main(spawner: Spawner) {
 
     // Create a GPIO to read the DHT11/DHT22
     let dht_pin = Flex::new(AnyPin::from(p.PIN_22));
-    
 
     // Configure I2C
     let sda = p.PIN_20;
@@ -133,7 +134,7 @@ async fn main(spawner: Spawner) {
         .await;
 
     // Configure delay for blinking LED
-    let delay = Duration::from_millis(5000);
+    let delay = Duration::from_millis(500);
 
     // Spawn the LED blinking task with desired delay
     unwrap!(spawner.spawn(modular::led_blink_task(control, delay)));
@@ -155,5 +156,4 @@ async fn main(spawner: Spawner) {
 
     // Spawn the DHT task
     unwrap!(spawner.spawn(modular::dht_task(dht_pin)));
-    
 }

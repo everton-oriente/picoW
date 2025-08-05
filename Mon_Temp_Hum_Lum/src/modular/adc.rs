@@ -134,7 +134,7 @@ pub async fn read_adc_channels(
             }
             Err(e) => error!("Temp read error: {}", e),
         }
-        
-        Timer::after_millis(3800).await;
+
+        Timer::after_millis(300_000).await; // Wait for 5 minutes before reading again
     }
 }
