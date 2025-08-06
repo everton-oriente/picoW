@@ -134,26 +134,33 @@ async fn main(spawner: Spawner) {
         .await;
 
     // Configure delay for blinking LED
-    let delay = Duration::from_millis(500);
+    let delay = Duration::from_millis(1_000);
 
     // Spawn the LED blinking task with desired delay
+    info!("Starting LED blink task");
     unwrap!(spawner.spawn(modular::led_blink_task(control, delay)));
 
     // Spawn the LED task
+    info!("Starting LED toggle task");
     unwrap!(spawner.spawn(modular::toogle_led(blinky_led)));
 
     // Spawn the luminosity task to read the luminosity
+    info!("Starting luminosity ADC task");
     unwrap!(spawner.spawn(modular::read_adc_channels(adc_mutex, lum_adc_0, temp_adc))); // Here you should add in compliance how many adc are going to use
 
     // Spawn the process_adc_channel_0 task
+    info!("Starting ADC channel 0 processing task");
     unwrap!(spawner.spawn(modular::process_adc_channel_0()));
 
     // Spawn the process_adc_channel_temp task
+    info!("Starting ADC temperature processing task");
     unwrap!(spawner.spawn(modular::process_adc_channel_temp()));
 
-    // Spawn the I2C Display task
-    unwrap!(spawner.spawn(modular::oled_task(i2c)));
-
     // Spawn the DHT task
+    info!("Starting DHT sensor task");
     unwrap!(spawner.spawn(modular::dht_task(dht_pin)));
+
+    // Spawn the I2C Display task
+    info!("Starting OLED display task");
+    unwrap!(spawner.spawn(modular::oled_task(i2c)));
 }

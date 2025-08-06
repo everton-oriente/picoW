@@ -39,6 +39,6 @@ pub async fn led_blink_task(mut control: cyw43::Control<'static>, delay: Duratio
 
         info!("led off!");
         control.gpio_set(0, false).await; // Turn LED off
-        Timer::after_secs(300).await;
+        Timer::after_millis(299_000).await;
     }
 }

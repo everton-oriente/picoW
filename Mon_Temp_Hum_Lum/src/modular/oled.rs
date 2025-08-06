@@ -46,7 +46,7 @@ pub async fn oled_task(i2c: I2c<'static, I2C0, Async>) {
     let mut display =
         Ssd1306::new(interface, DisplaySize128x64, DisplayRotation::Rotate0).into_buffered_graphics_mode();
 
-    Timer::after_millis(100).await;
+    Timer::after_millis(2_000).await;
     if display.init().is_err() {
         defmt::error!("Display init failed defmt");
         core::panic!("Display init failed core");
@@ -168,6 +168,6 @@ pub async fn oled_task(i2c: I2c<'static, I2C0, Async>) {
             defmt::error!("Flush failed");
         }
 
-        Timer::after_secs(305).await; // Update the display every 305 seconds
+        Timer::after_millis(300_000).await; // Update the display every 305 seconds
     }
 }

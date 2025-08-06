@@ -58,6 +58,6 @@ pub async fn dht_task(pin: Flex<'static>) {
                 info!("Error reading from DHT sensor: {}", defmt::Debug2Format(&e));
             }
         }
-        Timer::after(Duration::from_secs(300)).await;
+        Timer::after(Duration::from_millis(300_000)).await;
     }
 }

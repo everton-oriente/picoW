@@ -28,6 +28,6 @@ pub async fn process_adc_channel_temp() {
         let mut rx = get_receiver_adctemp().unwrap();
         let adctemp = rx.get().await;
         info!("TEMP CHEGOU COM: {}", adctemp);
-        Timer::after_secs(298).await;
+        Timer::after_millis(300_000).await;
     }
 }
