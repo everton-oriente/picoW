@@ -23,7 +23,7 @@ use embassy_sync::watch::{DynReceiver, Watch};
 use embassy_time::Timer;
 use {defmt_rtt as _, panic_probe as _}; // RTT logging and panic handler
 
-const ADC0_CONSUMERS: usize = 2;
+const ADC0_CONSUMERS: usize = 3;
 static ADC0_CHANNEL: Watch<ThreadModeRawMutex, u16, ADC0_CONSUMERS> = Watch::new();
 
 pub fn get_receiver_adc0() -> Option<DynReceiver<'static, u16>> {

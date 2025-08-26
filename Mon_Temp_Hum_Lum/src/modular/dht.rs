@@ -25,14 +25,14 @@ use embassy_sync::watch::{DynReceiver, Watch};
 use embassy_time::{Duration, Timer};
 use {defmt_rtt as _, panic_probe as _};
 
-const DHT_CONSUMERS_TEMPERATURE: usize = 2;
+const DHT_CONSUMERS_TEMPERATURE: usize = 3;
 static DHT_CHANNEL_TEMPERATURE: Watch<ThreadModeRawMutex, f32, DHT_CONSUMERS_TEMPERATURE> = Watch::new();
 
 pub fn get_receiver_dht_temperature() -> Option<DynReceiver<'static, f32>> {
     DHT_CHANNEL_TEMPERATURE.dyn_receiver()
 }
 
-const DHT_CONSUMERS_HUMIDITY: usize = 2;
+const DHT_CONSUMERS_HUMIDITY: usize = 3;
 static DHT_CHANNEL_HUMIDITY: Watch<ThreadModeRawMutex, f32, DHT_CONSUMERS_HUMIDITY> = Watch::new();
 
 pub fn get_receiver_dht_humidity() -> Option<DynReceiver<'static, f32>> {

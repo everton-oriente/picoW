@@ -21,10 +21,13 @@
 
 mod modular;
 
+
+use cyw43::JoinOptions;
 // Import required crates and modules
 use cyw43_pio::{DEFAULT_CLOCK_DIVIDER, PioSpi};
 use defmt::*; // For logging via RTT
 use embassy_executor::Spawner;
+use embassy_net::{Config, StackResources};
 use embassy_rp::adc::{Adc, Async, Channel, Config as AdcConfig, InterruptHandler as AdcIrq};
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{AnyPin, Flex, Level, Output, Pull};
@@ -33,7 +36,7 @@ use embassy_rp::peripherals::{I2C0, PIO0};
 use embassy_rp::pio::{InterruptHandler as PioIrq, Pio};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::mutex::Mutex;
-use embassy_time::Duration;
+use embassy_time::{/*Duration,*/Instant};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _}; // RTT logging and panic handler
 
@@ -50,13 +53,18 @@ bind_interrupts!(struct Irqs {
 
 });
 
+const WIFI_NETWORK: &str = "raspberrypipicow"; // change to your network SSID
+const WIFI_PASSWORD: &str = "//raspberrypipicow**"; // change to your network password
+
 /// Main async entry point
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     // Information thats the MCU has started the boot process
     info!("Initializing the system");
+    let start = Instant::now();
     // Initialize Embassy peripherals and clocks
     let p = embassy_rp::init(Default::default());
+
     // The peripherals has initialized
     info!("Peripherals has initialized with sucess");
     // Create an Output to the LED
@@ -120,7 +128,7 @@ async fn main(spawner: Spawner) {
     let state = STATE.init(cyw43::State::new());
 
     // Create the CYW43 driver instance
-    let (_net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
+    let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
 
     // Spawn the background task to keep the CYW43 chip running
     unwrap!(spawner.spawn(modular::cyw43_task(runner)));
@@ -133,12 +141,39 @@ async fn main(spawner: Spawner) {
         .set_power_management(cyw43::PowerManagementMode::PowerSave)
         .await;
 
+    let config = Config::dhcpv4(Default::default());
+    let elapsed = Instant::now() - start;
+    let elapsed_ms: u64 = elapsed.as_millis();
+    info!("Elapsed time since start: {} ms", elapsed_ms);
+    let seed = elapsed_ms; // Generate a random seed for the network stack
+
+    // Init network stack
+    static RESOURCES: StaticCell<StackResources<3>> = StaticCell::new();
+    let (stack, runner) = embassy_net::new(net_device, config, RESOURCES.init(StackResources::new()), seed);
+    // Spawn the network task to handle networking
+    unwrap!(spawner.spawn(modular::net_task(runner)));
+
+    while let Err(err) = control
+        .join(WIFI_NETWORK, JoinOptions::new(WIFI_PASSWORD.as_bytes()))
+        .await
+    {
+        info!("Failed to join network with status: {}", err.status);
+    }
+
+    info!("Waiting for link");
+    stack.wait_link_up().await;
+
+    info!("Waiting for DHCP");
+    stack.wait_config_up().await;
+
+    info!("Stack is up");
+
     // Configure delay for blinking LED
-    let delay = Duration::from_millis(1_000);
+    //let delay = Duration::from_millis(1_000);
 
     // Spawn the LED blinking task with desired delay
-    info!("Starting LED blink task");
-    unwrap!(spawner.spawn(modular::led_blink_task(control, delay)));
+    //info!("Starting LED blink task");
+    //unwrap!(spawner.spawn(modular::led_blink_task(control, delay)));
 
     // Spawn the LED task
     info!("Starting LED toggle task");
@@ -163,4 +198,9 @@ async fn main(spawner: Spawner) {
     // Spawn the I2C Display task
     info!("Starting OLED display task");
     unwrap!(spawner.spawn(modular::oled_task(i2c)));
+
+    // Spawn the TCP server task
+    info!("Starting TCP server task");
+    unwrap!(spawner.spawn(modular::tcp_server_task(stack, control)));
+
 }
