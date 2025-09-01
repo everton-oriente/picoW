@@ -60,7 +60,7 @@ pub async fn net_task(mut runner: embassy_net::Runner<'static, cyw43::NetDriver<
 
 /* This task is responsible for the TCP client that sends the values of the sensors to a server */
 // This is also used as tests to see if i can send the information via TCP to the computer
-/*
+
 #[embassy_executor::task]
 pub async fn tcp_server_task(
     stack: embassy_net::Stack<'static>,
@@ -116,4 +116,4 @@ pub async fn tcp_server_task(
     }
     
 }
-*/      
+     
