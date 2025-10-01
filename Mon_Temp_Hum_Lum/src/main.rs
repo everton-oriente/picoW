@@ -201,6 +201,6 @@ async fn main(spawner: Spawner) {
 
     // Spawn the TCP server task
     info!("Starting TCP server task");
-    unwrap!(spawner.spawn(modular::tcp_server_task(stack, control)));
+    unwrap!(spawner.spawn(modular::mqtt_server_task(stack, control)));
 
 }

@@ -22,6 +22,7 @@ heapless = "0.8.0"
 micromath = "2.1.0"
 panic-probe = { version = "1.0.0", features = ["print-defmt"] }
 portable-atomic = { version = "1.11.0", features = ["critical-section"] }
+rand_core = "0.6.4"
 rust-mqtt = { version = "0.3.0", default-features = false} # Features of this crate are defmt, log, no_std, std, tls
 ssd1306 = "0.10.0"
 static_cell = "2.1.0"
